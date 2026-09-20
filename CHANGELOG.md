@@ -8,6 +8,26 @@ promise somebody relies on.
 Entries before `0.0.1-beta` were reconstructed from the commit history after the
 fact, so they say what changed rather than what was announced at the time.
 
+## Unreleased
+
+### Documentation
+
+- `create_auth_router` is documented. It provides `/login` and `/callback` for
+  the authorization code flow and appeared in no guide or reference, so the
+  library read as though it could validate tokens but not sign anybody in.
+- A "Two Halves" section separates the resource server from the client, because
+  the FastAPI section covered only the first and did not say so.
+- The token refresh example no longer begins mid-flow with an undefined `code`.
+- The dev identity provider's limitation is stated: it mints tokens and serves
+  no authorization page, so `create_auth_router` has nothing to redirect to
+  locally. Its discovery document advertises an `authorization_endpoint` that is
+  not served.
+- `get_access_token` is documented as not single-flighting its refresh, which
+  matters against a provider that rotates refresh tokens and treats reuse as
+  theft.
+- Fixed the README link to the FastAPI guide, which dropped the `guide/` segment
+  and pointed at a file that does not exist.
+
 ## 0.0.2-beta - 2026-09-20
 
 ### Fixed

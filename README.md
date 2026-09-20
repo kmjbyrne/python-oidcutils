@@ -60,11 +60,67 @@ principal.has_role("admin")
 principal.has_permission("orders.write")
 ```
 
+## Two Halves
+
+The library does two separable jobs, and which one you need decides what you
+wire up.
+
+A **resource server** accepts a bearer token somebody else issued, checks it,
+and answers. That is `FastAPIAuth`, `current_user`, `require_role` and
+`require_permission`. It performs no login, because the caller arrives holding a
+token already.
+
+A **client** signs somebody in: it sends the browser to the identity server,
+exchanges the code it comes back with, and holds the refresh token. That is
+`OIDCClient`, `TokenManager` and `create_auth_router`.
+
+An API that only serves machine callers needs the first. An application with a
+sign-in button needs both.
+
+## Browser Login
+
+`create_auth_router` gives you the whole authorization code flow as two routes.
+The browser never sees client credentials or tokens, only a redirect and a
+session cookie.
+
+```python
+from fastapi import FastAPI
+from oidcutils import OIDCClient
+from oidcutils.contrib.fastapi import FastAPIAuth, create_auth_router
+
+app = FastAPI()
+
+client = OIDCClient(
+    issuer="https://id.example.com",
+    client_id="my-app",
+    client_secret="secret",
+    redirect_uri="https://my-app.example.com/auth/callback",
+)
+
+# /login sends the browser to the identity server.
+# /callback exchanges the code and sets an httpOnly session cookie.
+app.include_router(create_auth_router(client), prefix="/auth")
+
+# The resource half, for the API routes the signed-in browser then calls.
+app.state.auth = FastAPIAuth(issuer="https://id.example.com", audience="my-api")
+```
+
+`redirect_uri` has to match what the identity server has registered for this
+client, exactly. Most providers compare it as a string, so a trailing slash or a
+different host is a refused login rather than a warning.
+
+The default `TokenStore` is in memory, which means a restart signs everybody out
+and two workers do not share sessions. Pass a `TokenManager` backed by your own
+store for anything beyond a single process.
+
 ## Token Refresh
 
-The SDK handles token lifecycle through `OIDCClient` and `TokenManager`.
-Consumers call `get_access_token()` and get back a valid token string. The
-manager refreshes transparently when the access token is near expiry.
+`TokenManager` sits over a `TokenStore` and refreshes when the access token is
+near expiry, so callers ask for a token and get a valid one.
+
+`create_auth_router` builds one for you. Construct it directly when you are
+holding tokens obtained some other way, or when you need a store that outlives
+the process.
 
 ```python
 from oidcutils import OIDCClient, TokenManager
@@ -73,12 +129,14 @@ client = OIDCClient(
     issuer="https://id.example.com",
     client_id="my-app",
     client_secret="secret",
-    redirect_uri="http://localhost:8000/auth/callback",
+    redirect_uri="https://my-app.example.com/auth/callback",
 )
 
 manager = TokenManager(client)
 
-# After login, store the token set
+# `code` is the query parameter the identity server sends to redirect_uri.
+# create_auth_router does this exchange itself; do it by hand only when you
+# are not using that router.
 token_set = await client.exchange_code(code)
 await manager.store_token(session_id, token_set)
 
@@ -89,11 +147,20 @@ access_token = await manager.get_access_token(session_id)
 Implement the `TokenStore` protocol to plug in your own storage backend (Redis,
 database, encrypted cookies).
 
+`get_access_token` does not single-flight the refresh. Several requests that
+notice expiry together each send the refresh token, and a provider that rotates
+on every use may read the second as reuse and revoke the family. Wrap it in your
+own lock where that matters.
+
 ## FastAPI Integration
 
-See [docs/fastapi-integration.md](docs/fastapi-integration.md) for a full guide
-covering three wiring patterns: `app.state`, dependency overrides, and router
-factories.
+The resource half: validating the token a caller arrives with, and guarding
+routes by role or permission. Signing somebody in is
+[Browser Login](#browser-login) above.
+
+See [docs/guide/fastapi-integration.md](docs/guide/fastapi-integration.md) for a
+full guide covering three wiring patterns: `app.state`, dependency overrides,
+and router factories.
 
 Quick start with `app.state`:
 
@@ -150,6 +217,16 @@ Built on `http.server`, so it needs nothing beyond this package. Supply
 `--signing-key` or `OIDC_DEV_SIGNING_KEY` where tokens have to survive a
 restart. For a single-process loop, `create_dev_idp` returns the same provider
 as a mountable app.
+
+It mints tokens; it does not sign anybody in. There is no authorization page for
+a browser to land on, so `create_auth_router` has nothing to redirect to and its
+`/login` leads nowhere. Its discovery document advertises an
+`authorization_endpoint` that is not served, which is a known gap rather than a
+configuration mistake at your end.
+
+So a local loop tests the resource half: mint a token, send it as a bearer
+header, and exercise the routes behind `current_user`. Testing the browser flow
+itself needs an identity server with an authorization page.
 
 It issues a signed token to anyone who asks, so it belongs on a developer's
 machine and nowhere else. See [Local Development](docs/examples/local-dev.md).

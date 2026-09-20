@@ -24,6 +24,10 @@
 
 ::: oidcutils.contrib.fastapi.require_permission
 
+::: oidcutils.contrib.fastapi.create_auth_router
+
+::: oidcutils.contrib.fastapi.create_dev_router
+
 ::: oidcutils.contrib.fastapi.create_dev_idp
 
 ::: oidcutils.contrib.fastapi.dev_auth
