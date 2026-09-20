@@ -8,6 +8,17 @@ promise somebody relies on.
 Entries before `0.0.1-beta` were reconstructed from the commit history after the
 fact, so they say what changed rather than what was announced at the time.
 
+## 0.0.2-beta - 2026-09-20
+
+### Fixed
+
+- A token whose algorithm is not in the accepted list now answers `401` rather
+  than raising out of `validate_token` as an unhandled error. The token was
+  always rejected; the fault was which exception left the method, which let an
+  unauthenticated caller raise one on every request and told them "algorithm not
+  permitted" apart from "signature bad". Caught by `JoseError` rather than by
+  name, so a future error class in `joserfc` cannot escape the same way.
+
 ## 0.0.1-beta - 2026-09-19
 
 The first tagged release. An OAuth2/OIDC resource server SDK: validate a bearer

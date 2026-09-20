@@ -8,6 +8,7 @@ from joserfc.errors import (
     ExpiredTokenError,
     InvalidClaimError,
     InvalidKeyIdError,
+    JoseError,
 )
 from joserfc.jwk import KeySet
 from joserfc.jwt import JWTClaimsRegistry
@@ -93,7 +94,22 @@ class TokenValidator:
                 raise TokenError("Token has expired") from exc
             except InvalidClaimError as exc:
                 raise TokenError(f"Invalid claim: {exc}") from exc
+            except JoseError as exc:
+                raise TokenError(f"Invalid token: {exc}") from exc
         except InvalidClaimError as exc:
             raise TokenError(f"Invalid claim: {exc}") from exc
+        except JoseError as exc:
+            # Everything else the library can raise about a token, caught by
+            # its base class rather than by name. A token carrying an
+            # algorithm we do not accept raises UnsupportedAlgorithmError,
+            # which named clauses missed: it left an unauthenticated caller
+            # able to raise an unhandled exception on every request, and made
+            # a rejected token look like a server fault rather than a refusal.
+            #
+            # Deliberately not retried against a refreshed key set. A key
+            # rotation cannot make an unacceptable algorithm acceptable, so a
+            # refresh here would fetch the JWKS for every malformed token that
+            # arrived.
+            raise TokenError(f"Invalid token: {exc}") from exc
 
         return self._claim_mapper.map(decoded.claims)

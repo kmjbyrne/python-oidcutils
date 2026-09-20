@@ -1,10 +1,12 @@
+import base64
+import json
 import time
 from typing import Any
 
 import httpx
 import pytest
 from joserfc import jwt as jose_jwt
-from joserfc.jwk import RSAKey
+from joserfc.jwk import OctKey, RSAKey
 
 from oidcutils.resource import TokenError, TokenValidator
 
@@ -109,6 +111,46 @@ async def test_wrong_audience(validator: TokenValidator):
 async def test_wrong_issuer(validator: TokenValidator):
     token = _make_token({"iss": "https://evil.example.com"})
     with pytest.raises(TokenError, match="Invalid claim"):
+        await validator.validate_token(token)
+
+
+@pytest.mark.asyncio
+async def test_an_algorithm_we_do_not_accept_is_a_token_error(validator: TokenValidator):
+    """A refusal, not a server fault.
+
+    The token is rejected either way. What matters is which exception leaves
+    this method: anything that is not a TokenError reaches the caller as an
+    unhandled error, so an unauthenticated request could raise one on every
+    call and be answered 500 rather than 401.
+    """
+    secret = OctKey.import_key("k" * 32)
+    token = jose_jwt.encode(
+        {"alg": "HS256", "kid": "test-key-1"},
+        {
+            "iss": ISSUER,
+            "aud": AUDIENCE,
+            "sub": "user-123",
+            "exp": int(time.time()) + 3600,
+        },
+        secret,
+    )
+
+    with pytest.raises(TokenError, match="Invalid token"):
+        await validator.validate_token(token)
+
+
+@pytest.mark.asyncio
+async def test_an_unsigned_token_is_a_token_error(validator: TokenValidator):
+    """``alg: none`` is the oldest bypass attempt there is."""
+    header = base64.urlsafe_b64encode(b'{"alg":"none","kid":"test-key-1"}').rstrip(b"=")
+    payload = base64.urlsafe_b64encode(
+        json.dumps(
+            {"iss": ISSUER, "aud": AUDIENCE, "sub": "user-123", "exp": int(time.time()) + 3600}
+        ).encode()
+    ).rstrip(b"=")
+    token = f"{header.decode()}.{payload.decode()}."
+
+    with pytest.raises(TokenError):
         await validator.validate_token(token)
 
 
