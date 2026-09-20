@@ -205,6 +205,81 @@ Pass the parent app, since that is what the mount is reachable through.
 `FastAPIAuth` takes `http_client` directly if you would rather assemble it
 yourself.
 
+## Signing In With A Persona
+
+Everything above hands out tokens on request, which tests a resource server but
+not a sign-in. `FastAPIAuth.mount_dev` adds the missing half: an authorization
+page listing people to be, wired to the `/login` and `/callback` routes a real
+provider would drive.
+
+```python
+from fastapi import FastAPI
+from oidcutils.contrib.fastapi import FastAPIAuth, current_user
+from oidcutils.dev import DevPersona
+
+PERSONAS = [
+    DevPersona(
+        key="alice",
+        subject="019b76da-b3b8-741c-ada2-4c1da1ed4927",
+        name="Alice Admin",
+        email="alice@acme.example",
+        purpose="Owns Acme. Has a personal space too.",
+        roles=("admin",),
+    ),
+    DevPersona(
+        key="nomad",
+        subject="019b76da-c358-7972-b57c-06ae0972b8e2",
+        name="Noa Nomad",
+        purpose="No space and no organization: every resource refuses.",
+    ),
+]
+
+app = FastAPI()
+auth = FastAPIAuth.mount_dev(app, "http://localhost:8000", "my-api", PERSONAS)
+app.dependency_overrides[current_user] = auth.get_principal
+```
+
+`/auth/login` then redirects to a page listing Alice and Noa. Picking one
+redirects back with a code, `/auth/callback` exchanges it, and the browser
+leaves holding a session cookie. The same routes work unchanged against a real
+provider: only the issuer differs.
+
+### The Personas Are A Fixture
+
+The list is static and written by hand. That is the point of it.
+
+A persona carries what an identity server knows: a subject, a name, an email,
+and any roles it issues. It carries nothing about your application, because an
+identity server has no concept of your organizations, workspaces or permissions.
+Those are rows your service owns, read per request, and a token that carried
+them would keep asserting a membership after it was revoked.
+
+So the subject is the part that matters. It is the only thing your service sees
+of a person, which makes it the join between the two halves of a local setup:
+
+- the persona list here decides who can sign in
+- your own fixtures decide what that subject can reach
+
+Both have to name the same ids. Two lists that drift fail silently, because a
+token for somebody your service has never seen looks exactly like a new signup
+rather than a mistake. Generating one list from the other is the way to stop
+that, and if your seed data already defines the people, build the personas from
+it rather than writing them twice.
+
+Pick the subjects to cover the cases that are awkward to reach by clicking: the
+account with nothing, the one whose access was revoked, the administrator. A
+persona list is most useful when it is the failure paths rather than the happy
+one.
+
+### What It Does Not Do
+
+The provider issues no refresh token, so a refresh grant is refused rather than
+answered. Nothing here exercises rotation, and a client that depends on it
+should be tested against a real provider.
+
+Codes are single use and expire, as a real provider's do. Sessions are held in
+memory, so a restart signs everybody out.
+
 ## Signing Keys
 
 By default the provider generates an ES256 key at import. It lives in memory and

@@ -911,7 +911,7 @@ wheels = [
 
 [[package]]
 name = "oidcutils"
-version = "0.1.0"
+version = "0.0.3b0"
 source = { editable = "." }
 dependencies = [
     { name = "authlib" },

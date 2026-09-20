@@ -14,6 +14,7 @@ import json
 import os
 import secrets
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from joserfc import jwt
@@ -153,10 +154,73 @@ def discovery_document(issuer: str) -> dict:
     """Return a minimal OIDC discovery document for local dev."""
     return {
         "issuer": issuer,
-        "authorization_endpoint": f"{issuer}/authorize",
+        "authorization_endpoint": f"{issuer}/dev/authorize",
         "token_endpoint": f"{issuer}/dev/token",
         "jwks_uri": f"{issuer}/.well-known/jwks.json",
         "response_types_supported": ["code"],
         "subject_types_supported": ["public"],
         "id_token_signing_alg_values_supported": [_alg],
     }
+
+
+# Authorization codes handed out by the dev provider, each mapping to the
+# claims it was issued for. In memory and single use: a restart drops them,
+# which is the same promise the signing key makes.
+_codes: dict[str, dict] = {}
+
+CODE_LIFETIME = 300
+
+
+@dataclass(frozen=True)
+class DevPersona:
+    """Somebody the authorization page offers to sign in as.
+
+    A fixture, not a user record. It carries what an identity server would put
+    in a token and nothing an application would decide for itself: no
+    memberships, no roles the application owns, because an identity server does
+    not know about those.
+    """
+
+    key: str
+    subject: str
+    name: str = ""
+    email: str = ""
+    # What the picker shows beneath the name, to say what this persona is for.
+    purpose: str = ""
+    roles: tuple[str, ...] = ()
+    permissions: tuple[str, ...] = ()
+
+
+def issue_code(persona: DevPersona, redirect_uri: str) -> str:
+    """Return a fresh authorization code standing for ``persona``.
+
+    The code carries the claims rather than a reference to them, so nothing
+    outside this module has to hold state between the authorization page and
+    the token exchange.
+    """
+    code = secrets.token_urlsafe(24)
+    _codes[code] = {
+        "subject": persona.subject,
+        "name": persona.name,
+        "email": persona.email,
+        "roles": list(persona.roles),
+        "permissions": list(persona.permissions),
+        "redirect_uri": redirect_uri,
+        "expires_at": time.time() + CODE_LIFETIME,
+    }
+    return code
+
+
+def redeem_code(code: str) -> dict | None:
+    """Return the claims ``code`` stands for, or ``None``.
+
+    Single use. A real provider treats a second presentation as theft, and a
+    dev provider that allowed replay would hide a client bug that only appears
+    against the real one.
+    """
+    claims = _codes.pop(code, None)
+    if claims is None:
+        return None
+    if claims["expires_at"] < time.time():
+        return None
+    return claims

@@ -1,6 +1,6 @@
 [project]
 name = "oidcutils"
-version = "0.0.2b0"
+version = "0.0.3b0"
 description = "Lightweight OAuth2/OIDC SDK with optional FastAPI integration"
 readme = "README.md"
 authors = [

@@ -12,9 +12,14 @@
     "stern": true,
   },
 
-  // MD024 (no duplicate headings) stays STRICT. Uniqueness is achieved by
-  // numbering repeated sub-headings ("### 1. Technical Design"), not by relaxing
-  // the rule. Do not add "siblings_only" here.
+  // MD024 (no duplicate headings), scoped to siblings. A changelog repeats
+  // "### Added" once per release by design, and numbering them to satisfy the
+  // strict form ("### 1. Added") reads as though the order meant something.
+  //
+  // Duplicates under one parent are still caught, which is the case worth
+  // catching: two "### Added" in the same release is an editing mistake, two
+  // in different releases is the format working.
+  "MD024": { "siblings_only": true },
 
   // MD036 (no bold-as-heading) stays STRICT. Use real headings for labels.
 

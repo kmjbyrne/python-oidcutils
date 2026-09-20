@@ -57,11 +57,20 @@ class OIDCClient:
         return self._metadata
 
     def _build_oauth_client(self) -> AsyncOAuth2Client:
+        """Return a client for the token endpoint.
+
+        Carries the transport it was given, so an issuer that is not on the
+        network is reachable. A mounted dev provider is the case: it listens on
+        no port, and without this the code exchange tries to resolve its issuer
+        as a hostname and fails where discovery had just succeeded.
+        """
+        transport = getattr(self._http_client, "_transport", None)
         return AsyncOAuth2Client(
             client_id=self._client_id,
             client_secret=self._client_secret,
             redirect_uri=self._redirect_uri,
             scope=" ".join(self._scopes),
+            transport=transport,
         )
 
     async def authorization_url(self, state: str | None = None) -> tuple[str, str]:

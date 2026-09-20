@@ -26,7 +26,12 @@ AUDIENCE = "my-api"
 def idp() -> Iterator[str]:
     """Run the IdP on a free port and yield the address it answers as."""
     server = serve(port=0, audience=AUDIENCE)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    # serve_forever polls, and shutdown() waits for the next poll to notice.
+    # The default interval is half a second, which every test in this module
+    # was paying in teardown.
+    threading.Thread(
+        target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+    ).start()
     try:
         yield f"http://127.0.0.1:{server.server_address[1]}"
     finally:
@@ -179,7 +184,9 @@ class TestExplicitIssuer:
     def test_publishes_what_it_was_told_to(self):
         """For a server behind something that rewrites the host."""
         server = serve(port=0, audience=AUDIENCE, issuer="https://id.example.test")
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+        threading.Thread(
+            target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+        ).start()
         try:
             address = f"http://127.0.0.1:{server.server_address[1]}"
             document = _get(f"{address}/.well-known/openid-configuration")
@@ -281,7 +288,9 @@ class TestSigningKey:
     async def test_a_token_signed_with_a_loaded_key_validates(self, ec_jwk):
         """End to end: the key is loaded, and the validator accepts what it signs."""
         server = serve(port=0, audience=AUDIENCE, signing_key=str(ec_jwk))
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+        threading.Thread(
+            target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+        ).start()
         try:
             address = f"http://127.0.0.1:{server.server_address[1]}"
             token = _post(f"{address}/dev/token", {"subject": "usr_alice"})["access_token"]

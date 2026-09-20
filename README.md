@@ -218,15 +218,40 @@ Built on `http.server`, so it needs nothing beyond this package. Supply
 restart. For a single-process loop, `create_dev_idp` returns the same provider
 as a mountable app.
 
-It mints tokens; it does not sign anybody in. There is no authorization page for
-a browser to land on, so `create_auth_router` has nothing to redirect to and its
-`/login` leads nowhere. Its discovery document advertises an
-`authorization_endpoint` that is not served, which is a known gap rather than a
-configuration mistake at your end.
+### Signing In Locally
 
-So a local loop tests the resource half: mint a token, send it as a bearer
-header, and exercise the routes behind `current_user`. Testing the browser flow
-itself needs an identity server with an authorization page.
+`FastAPIAuth.mount_dev` gives an app a working browser login with nothing
+external running: the provider, an authorization page listing who to be, and the
+`/login` and `/callback` routes that drive the flow.
+
+```python
+from oidcutils.contrib.fastapi import FastAPIAuth, current_user
+from oidcutils.dev import DevPersona
+
+PERSONAS = [
+    DevPersona(key="alice", subject="u-alice", name="Alice Admin",
+               email="alice@acme.example", purpose="Owns Acme", roles=("admin",)),
+    DevPersona(key="bob", subject="u-bob", name="Bob Editor",
+               purpose="Member of Acme"),
+]
+
+auth = FastAPIAuth.mount_dev(app, issuer, audience, PERSONAS)
+app.dependency_overrides[current_user] = auth.get_principal
+```
+
+`/auth/login` redirects to a page listing them, picking one redirects back with
+a code, and the browser leaves holding a session cookie. The same routes work
+unchanged against a real provider: only the issuer differs.
+
+A persona carries what an identity server knows, which is identity and the roles
+it issues. Not memberships: those are your application's concept, read per
+request from rows it owns. The subject is the join between the two, so the
+personas and your own fixtures have to name the same ids. See
+[docs/examples/local-dev.md](docs/examples/local-dev.md).
+
+Without `personas` the provider mints tokens and serves no authorization page,
+which is enough for exercising the resource half by hand: mint a token, send it
+as a bearer header, and call the routes behind `current_user`.
 
 It issues a signed token to anyone who asks, so it belongs on a developer's
 machine and nowhere else. See [Local Development](docs/examples/local-dev.md).

@@ -8,7 +8,43 @@ promise somebody relies on.
 Entries before `0.0.1-beta` were reconstructed from the commit history after the
 fact, so they say what changed rather than what was announced at the time.
 
-## Unreleased
+## 0.0.3-beta - 2026-09-20
+
+### Added
+
+- `session_principal` turns the session cookie `create_auth_router` sets back
+  into a `Principal`, refreshing the access token where it is near expiry. A
+  bearer token is served from the header where one is sent, so an application
+  with a sign-in page is still callable by a script. `create_auth_router` now
+  exposes its token manager and cookie name, which were closed over and
+  unreachable.
+- `FastAPIAuth.mount_dev` gives an app a working browser login against an
+  in-process provider in one call: the provider, an authorization page listing
+  personas, the `/login` and `/callback` routes, and a validator bound to accept
+  what comes out of it. It exists because wiring that by hand needs a transport
+  that cannot be built until the app it wraps exists.
+- The dev identity provider serves an authorization page. Given `personas`,
+  `create_dev_router` mounts `/dev/authorize`: it lists them, picking one
+  redirects back with a single-use code, and `/dev/token` exchanges it for a
+  signed token.
+- `DevPersona` describes somebody the page offers to sign in as: subject, name,
+  email, and any roles the identity server issues. Not memberships, which are
+  the application's own concept.
+
+### Fixed
+
+- `OIDCClient` now carries its `http_client`'s transport into the token endpoint
+  calls. It was used for discovery only, so `exchange_code` and `refresh` always
+  went to the network: against a mounted dev provider, discovery succeeded and
+  the exchange then failed trying to resolve the issuer as a hostname.
+- The discovery document advertised `/authorize`, which nothing served. It now
+  names `/dev/authorize`, which does exist.
+- The IdP tests run in a second rather than ten. `serve_forever` polls, and
+  `shutdown()` waits for the next poll, so every test in the module paid the
+  default half-second interval in teardown.
+- The dev token endpoint reads a form-encoded grant without `python-multipart`.
+  `request.form()` needs that package, which this library does not declare, so a
+  code exchange failed for anyone who had installed only its own dependencies.
 
 ### Documentation
 
