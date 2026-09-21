@@ -40,8 +40,21 @@ uv add git+https://github.com/kmjbyrne/python-oidcutils.git@v0.0.3-beta
 ## How Validation Works
 
 Token validation uses OIDC discovery to find the JWKS endpoint, fetches the
-signing keys, and caches them. When the SDK encounters an unknown key ID, it
-refreshes the JWKS automatically to handle key rotation.
+signing keys, and caches them.
+
+The handling around that cache is most of the reason to use this rather than
+calling a JWT library yourself. A signature failure or an unrecognised key id
+refetches the JWKS once and retries, which is what carries a service through a
+provider rotating its keys. A token whose algorithm is refused does not get that
+retry, because no rotation can make the algorithm acceptable and retrying would
+fetch the JWKS for every malformed token an unauthenticated caller cared to
+send. Every failure joserfc can raise arrives as a `TokenError`, including the
+ones that are easy to miss by name, so a bad token is a 401 rather than an
+unhandled exception.
+
+Transport failures are left alone deliberately. An unreachable provider raises
+the underlying `httpx` error, so "this token is bad" stays distinguishable from
+"the provider is down".
 
 RBAC adds no extra verification. Roles and permissions live inside the JWT
 claims. After the single token validation, the SDK checks the `Principal` fields
