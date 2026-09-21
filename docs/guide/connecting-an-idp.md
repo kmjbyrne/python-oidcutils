@@ -35,9 +35,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings, OIDCSettings):
     model_config = SettingsConfigDict(env_file=(".env", ".env.local"))
 
-    # The `redirect_uri` of RFC 6749: the route on YOUR service that the
-    # provider sends the browser back to. Declare it yourself; OIDCSettings
-    # carries the client credentials but not this.
+    # Where the provider sends the browser back to: a route on YOUR service.
+    # Declare it yourself. OIDCSettings carries the client credentials but
+    # not this, and the OIDC_ prefix here just keeps the auth block together.
     #
     # The whole URL, not a base to join onto. Providers compare it as an exact
     # string, so it is the value that has to match what you registered.
@@ -47,6 +47,10 @@ class Settings(BaseSettings, OIDCSettings):
 `OIDCSettings` contributes `OIDC_ISSUER`, `OIDC_AUDIENCE`, `OIDC_CLIENT_ID` and
 `OIDC_CLIENT_SECRET`. The first two are read by the validator; the last two are
 read by the client and ignored by everything else.
+
+The names are a namespace rather than a citation. `redirect_uri`, `client_id`
+and `client_secret` are all OAuth 2.0 (RFC 6749), which OIDC builds the
+authorization code flow on; the issuer and the ID token are what OIDC adds.
 
 ```bash
 OIDC_ISSUER="http://localhost:9000"        # the provider
