@@ -106,3 +106,21 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
+
+# Third-party deprecations, each from a dependency telling another dependency
+# to move on. Nothing here triggers them and nothing here can fix them, so
+# they are noise on every run.
+#
+# Named individually rather than ignoring DeprecationWarning wholesale: a
+# deprecation this package causes is one worth seeing, and a blanket filter
+# would hide it. Remove an entry when the dependency that emits it is
+# upgraded.
+filterwarnings = [
+    "error::DeprecationWarning:oidcutils.*",
+    # No category on the first two: authlib and starlette raise subclasses of
+    # their own rather than DeprecationWarning, so naming the category would
+    # miss them.
+    "ignore:The httpx module is deprecated.*",
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated.*",
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+]
