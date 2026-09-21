@@ -117,40 +117,6 @@ Both styles work at once after this. A browser arrives with the session cookie,
 a script arrives with an `Authorization` header, and `session_principal` serves
 whichever it finds.
 
-## Behind A Proxy
-
-The issuer is one string, and it has to mean the same place to the browser and
-to your service. The browser resolves it over the public address; your service,
-inside a container, may not resolve that address at all.
-
-`TokenValidator` builds the discovery URL from the issuer, compares the issuer
-discovery reports back, and requires the token's `iss` to match it. All three
-are the same value, so pointing it at an internal hostname fails the comparison
-against what the provider reports.
-
-Make the public address reachable from inside instead. Under Docker Compose that
-is a network alias on the proxy:
-
-```yaml
-nginx:
-  networks:
-    default:
-      aliases:
-        - app.example.test
-```
-
-If the proxy serves a certificate your service does not trust, the discovery
-fetch fails verification. Mount the CA and point Python at it rather than
-disabling the check:
-
-```yaml
-api:
-  environment:
-    SSL_CERT_FILE: /etc/ssl/certs/dev-ca.crt
-  volumes:
-    - ./certs/dev-ca.crt:/etc/ssl/certs/dev-ca.crt:ro
-```
-
 ## Sessions Beyond One Process
 
 `create_auth_router` defaults to an in-memory `TokenStore`. A restart signs
