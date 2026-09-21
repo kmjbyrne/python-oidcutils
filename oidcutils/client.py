@@ -5,6 +5,16 @@ import httpx
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 
 
+class GrantError(Exception):
+    """The identity server refused to issue tokens.
+
+    Distinct from ``TokenError``, which means a token was presented and did
+    not validate. This means no token was issued at all: a code already
+    redeemed, a refresh token the server does not recognise, client
+    credentials it rejects, or a grant it does not implement.
+    """
+
+
 @dataclass
 class TokenSet:
     access_token: str
@@ -105,6 +115,22 @@ class OIDCClient:
         return self._to_token_set(token)
 
     def _to_token_set(self, token: dict[str, Any]) -> TokenSet:
+        # An OAuth2 error is a 400 carrying a JSON body, which authlib returns
+        # rather than raising on, so it arrives here looking like a token.
+        # Indexing it raises KeyError, which names neither the grant that
+        # failed nor the server that refused it.
+        if "access_token" not in token:
+            # RFC 6749 says `error` with an optional `error_description`, but a
+            # server that answers some other shape still has to produce a
+            # message somebody can act on, so fall back to what it did send.
+            error = token.get("error")
+            if error:
+                description = token.get("error_description")
+                detail = f"{error}: {description}" if description else error
+            else:
+                detail = str(token) if token else "the response carried no body"
+            raise GrantError(f"The identity server issued no token, {detail}")
+
         return TokenSet(
             access_token=token["access_token"],
             token_type=token.get("token_type", "Bearer"),

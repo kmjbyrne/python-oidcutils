@@ -79,8 +79,10 @@ Under the FastAPI integration this distinction shows up as status codes.
 
 ## Next Steps
 
-- [FastAPI Integration](../guide/fastapi-integration.md) -- wire auth into
-  routes
+- [FastAPI Integration](../guide/fastapi-integration.md) -- check tokens in
+  routes, for a service that receives them
+- [Connecting An IdP](../guide/connecting-an-idp.md) -- sign a browser in, for a
+  service that needs to obtain them
 - [Token Refresh](../guide/token-refresh.md) -- manage token lifecycle
 - [Claim Mapping](../guide/claim-mapping.md) -- customize how claims become a
   Principal

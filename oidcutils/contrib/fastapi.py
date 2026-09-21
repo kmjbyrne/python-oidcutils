@@ -7,6 +7,8 @@ import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -27,10 +29,15 @@ class OIDCSettings:
     OIDC_AUDIENCE: str = ""
     OIDC_CLIENT_ID: str = ""
     OIDC_CLIENT_SECRET: str = ""
+    OIDC_REDIRECT_URI: str = ""
     OIDC_BYPASS: bool = False
 
 
 _bearer_scheme = HTTPBearer(auto_error=True)
+
+DEFAULT_AUTH_PREFIX = "/auth"
+DEFAULT_LOGIN_PATH = "/login"
+DEFAULT_LOGIN_URI = f"{DEFAULT_AUTH_PREFIX}{DEFAULT_LOGIN_PATH}"
 
 
 class FastAPIAuth:
@@ -39,6 +46,8 @@ class FastAPIAuth:
         issuer: str,
         audience: str,
         *,
+        auth_prefix: str = DEFAULT_AUTH_PREFIX,
+        login_path: str = DEFAULT_LOGIN_PATH,
         algorithms: list[str] | None = None,
         claim_mapper: ClaimMapper | None = None,
         http_client: httpx.AsyncClient | None = None,
@@ -50,6 +59,9 @@ class FastAPIAuth:
         mounted rather than listening on a port, so it is reached with an
         ``httpx.ASGITransport`` rather than a socket.
         """
+        self.auth_prefix = auth_prefix
+        self.login_path = login_path
+        self.login_uri = f"{auth_prefix}{login_path}"
         self._validator = TokenValidator(
             issuer=issuer,
             audience=audience,
@@ -229,15 +241,18 @@ def require_permission(
 def create_auth_router(
     client: OIDCClient,
     token_manager: TokenManager | None = None,
-    login_path: str = "/login",
-    callback_path: str = "/callback",
+    login_path: str | None = "/login",
+    callback_path: str | None = "/callback",
     post_login_redirect: str = "/",
     session_key: str = "session_id",
 ) -> APIRouter:
-    """Create a router with /login and /callback endpoints for the auth code flow.
+    """Create a router with endpoints for the auth code flow.
 
     The browser never sees client credentials or tokens. It only follows
     redirects and receives a session cookie.
+
+    Pass ``None`` for ``login_path`` or ``callback_path`` to omit that route,
+    for services that only need one half of the flow.
     """
     store = InMemoryTokenStore()
     manager = token_manager or TokenManager(client=client, store=store)
@@ -245,37 +260,38 @@ def create_auth_router(
 
     router = APIRouter()
 
-    @router.get(login_path)
-    async def login(request: Request) -> RedirectResponse:
-        url, state = await client.authorization_url()
-        _pending_states[state] = post_login_redirect
-        return RedirectResponse(url)
+    if login_path is not None:
 
-    @router.get(callback_path)
-    async def callback(request: Request, code: str, state: str) -> RedirectResponse:
-        if state not in _pending_states:
-            raise HTTPException(400, "Invalid or expired state parameter")
+        @router.get(login_path)
+        async def login(request: Request) -> RedirectResponse:
+            url, state = await client.authorization_url()
+            _pending_states[state] = post_login_redirect
+            return RedirectResponse(url)
 
-        redirect_to = _pending_states.pop(state)
+    if callback_path is not None:
 
-        token_set = await client.exchange_code(code)
+        @router.get(callback_path)
+        async def callback(request: Request, code: str, state: str) -> RedirectResponse:
+            if state not in _pending_states:
+                raise HTTPException(400, "Invalid or expired state parameter")
 
-        sid = secrets.token_urlsafe(32)
-        await manager.store_token(sid, token_set)
+            redirect_to = _pending_states.pop(state)
 
-        response = RedirectResponse(redirect_to)
-        response.set_cookie(
-            key=session_key,
-            value=sid,
-            httponly=True,
-            secure=request.url.scheme == "https",
-            samesite="lax",
-        )
-        return response
+            token_set = await client.exchange_code(code)
 
-    # Held on the router so a caller can turn the cookie it sets back into a
-    # principal. Without them the manager is closed over and unreachable, and
-    # a session cookie is a value nothing can redeem.
+            sid = secrets.token_urlsafe(32)
+            await manager.store_token(sid, token_set)
+
+            response = RedirectResponse(redirect_to)
+            response.set_cookie(
+                key=session_key,
+                value=sid,
+                httponly=True,
+                secure=request.url.scheme == "https",
+                samesite="lax",
+            )
+            return response
+
     router.token_manager = manager  # type: ignore[attr-defined]
     router.session_key = session_key  # type: ignore[attr-defined]
     return router
@@ -544,6 +560,25 @@ def configure_dev(app: FastAPI, settings: OIDCSettings) -> None:
     app.include_router(create_dev_router(issuer=issuer, audience=audience))
 
     app.state.auth = FastAPIAuth(issuer=issuer, audience=audience)
+
+
+class AuthenticateHeaderMiddleware(BaseHTTPMiddleware):
+    """Adds a ``WWW-Authenticate`` header to 401 responses.
+
+    Usage::
+
+        app.add_middleware(AuthenticateHeaderMiddleware, login_uri="/auth/login")
+    """
+
+    def __init__(self, app: Any, login_uri: str = DEFAULT_LOGIN_URI, realm: str = "api") -> None:
+        super().__init__(app)
+        self._header_value = f'Bearer realm="{realm}", login_uri="{login_uri}"'
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        response = await call_next(request)
+        if response.status_code == 401:
+            response.headers["WWW-Authenticate"] = self._header_value
+        return response
 
 
 class _DeferredASGITransport(httpx.AsyncBaseTransport):
