@@ -1,4 +1,4 @@
-# Connecting A FastAPI Service To An Identity Provider
+# Connecting a FastAPI service to an identity provider
 
 You have a FastAPI service. You have an identity provider running somewhere
 else. This page is the wiring between them, for the case where a browser signs
@@ -8,20 +8,20 @@ If your service only ever receives bearer tokens that something else obtained,
 you do not need any of this. Read
 [FastAPI Integration](fastapi-integration.md) instead and stop there.
 
-## The Four Pieces
+## The four pieces
 
-A sign-in flow needs four things wired, and three of them are easy to find. The
-fourth is the one that catches people.
+A sign-in flow needs four things wired up. The first three are easy enough to
+find in the API; the fourth is the one people miss.
 
-1. A **validator**, which turns a token into a `Principal`.
-2. A **client**, which drives the browser to the provider and exchanges the code
-   it comes back with.
-3. Two **routes**, `/login` and `/callback`.
-4. A **join**, because the callback leaves the browser holding a cookie and
-   your routes are looking for a bearer token.
+1. A validator, which turns a token into a `Principal`.
+2. A client, which drives the browser to the provider and exchanges the code it
+   comes back with.
+3. Two routes, `/login` and `/callback`.
+4. A join between them, because the callback leaves the browser holding a
+   cookie while your routes are looking for a bearer token.
 
-Leave out the fourth and a sign-in appears to work: the provider redirects, the
-cookie gets set, and then every API call answers 401.
+Leave out that last one and the sign-in looks like it works. The provider
+redirects, the cookie gets set, and then every API call answers 401.
 
 ## Configuration
 
@@ -124,7 +124,7 @@ Both styles work at once after this. A browser arrives with the session cookie,
 a script arrives with an `Authorization` header, and `session_principal` serves
 whichever it finds.
 
-## Sessions Beyond One Process
+## Sessions beyond one process
 
 `create_auth_router` defaults to an in-memory `TokenStore`. A restart signs
 everybody out and two workers do not share sessions, so anything past a single
@@ -135,7 +135,7 @@ manager = TokenManager(client=client, store=MyRedisStore())
 router = create_auth_router(client, token_manager=manager)
 ```
 
-## When It Does Not Work
+## When it does not work
 
 | Symptom                               | Cause                                                         |
 | ------------------------------------- | ------------------------------------------------------------- |
@@ -146,7 +146,7 @@ router = create_auth_router(client, token_manager=manager)
 | `CERTIFICATE_VERIFY_FAILED`           | The issuer is served over TLS your service does not trust     |
 | `Issuer mismatch: expected X, got Y`  | Discovery reports a different issuer than configured          |
 
-## A Provider To Develop Against
+## A provider to develop against
 
 `FastAPIAuth.mount_dev` mounts a provider inside your own app, which is the
 quickest way to click through a login with nothing else running. It derives

@@ -1,31 +1,17 @@
 # oidcutils
 
-Authentication for Python services that sit behind an OIDC identity provider.
+A Python SDK that wraps [Authlib](https://authlib.org/) and
+[joserfc](https://jose.authlib.org/) to handle OAuth2/OIDC token validation, and
+builds a `Principal` identity model from JWT claims. Optional
+[FastAPI](https://fastapi.tiangolo.com/) integration exposes `current_user` and
+`require_permission` as dependency functions, so service teams add auth to
+routes without touching JWTs directly.
 
-It does two jobs, and most services need only the first.
-
-**Checking a caller.** A request arrives with a token somebody else issued.
-The library verifies its signature, expiry, issuer and audience against the
-provider's published keys, and hands you a `Principal` with the caller's
-subject, roles and permissions. Your routes ask `has_role("admin")` instead
-of parsing JWTs.
-
-**Signing somebody in.** A browser arrives with no token at all. The library
-sends it to the provider, exchanges the code that comes back for tokens, and
-refreshes them before they expire. An API serving machines never needs this;
-an application with a sign-in button does.
-
-Both halves work on their own. The first is `TokenValidator`, the second is
-`OIDCClient`, and neither imports a web framework. `oidcutils.contrib.fastapi`
-adds FastAPI dependencies on top, as an optional extra.
-
-## Where To Start
-
-| You are building                | Read                                                                                       |
-| ------------------------------- | ------------------------------------------------------------------------------------------ |
-| An API that receives tokens     | [Checking A Token](#checking-a-token), then [FastAPI Integration](#fastapi-integration)    |
-| A service with a sign-in button | [Browser Login](#browser-login), then [Connecting An IdP](docs/guide/connecting-an-idp.md) |
-| Something to develop against    | [Local Development](#local-development)                                                    |
+It also does the other half, for services that have to obtain a token rather
+than just check one. `OIDCClient` sends a browser to the identity server,
+exchanges the code it comes back with, and refreshes the token set before it
+expires. An API serving machine callers never needs that; anything with a
+sign-in button does. Start at [browser login](#browser-login) if that is you.
 
 ## Install
 
@@ -47,7 +33,7 @@ Pin to a version tag:
 uv add git+https://github.com/kmjbyrne/python-oidcutils.git@v0.0.3-beta
 ```
 
-## How Validation Works
+## How validation works
 
 Token validation uses OIDC discovery to find the JWKS endpoint, fetches the
 signing keys, and caches them. When the SDK encounters an unknown key ID, it
@@ -57,10 +43,10 @@ RBAC adds no extra verification. Roles and permissions live inside the JWT
 claims. After the single token validation, the SDK checks the `Principal` fields
 in memory.
 
-## Checking A Token
+## Checking a token
 
-The validator on its own, with no framework. `FastAPIAuth` wraps this; reach
-for it directly when you are serving HTTP some other way.
+`FastAPIAuth` wraps this, so reach for the validator directly only when you are
+serving HTTP some other way.
 
 ```python
 from oidcutils import TokenValidator, Principal
@@ -76,10 +62,10 @@ principal.has_role("admin")
 principal.has_permission("orders.write")
 ```
 
-## Browser Login
+## Browser login
 
-Signing somebody in is three calls on `OIDCClient`. It imports no framework, so
-this is the same whatever you serve HTTP with:
+Signing somebody in is three calls on `OIDCClient`, and since it imports no
+framework this is the same however you happen to serve HTTP:
 
 ```python
 from oidcutils import OIDCClient
@@ -97,7 +83,7 @@ url, state = await client.authorization_url()
 # On your /callback route, with the code the identity server sent back.
 token_set = await client.exchange_code(code)
 
-# Later, when the access token nears expiry. See Token Refresh below.
+# Later, when the access token nears expiry. See Token refresh below.
 token_set = await client.refresh(token_set.refresh_token)
 ```
 
@@ -107,47 +93,12 @@ different host is a refused login rather than a warning. It names a route on
 your service: deriving it from the issuer sends the browser back to the identity
 server, which has no callback to answer with.
 
-Around those calls sits bookkeeping somebody has to own. The pending states
-between the redirect and the callback, the token set stored against a session
-id, and the cookie that names it.
+There is bookkeeping around those calls that somebody has to own: the pending
+states between the redirect and the callback, the token set stored against a
+session id, and the cookie that names it. If you are on FastAPI,
+`create_auth_router` does all of that for you.
 
-### With FastAPI
-
-`create_auth_router` owns that bookkeeping and gives you the flow as two routes.
-The browser never sees client credentials or tokens, only a redirect and a
-session cookie.
-
-```python
-from fastapi import FastAPI
-from oidcutils import OIDCClient
-from oidcutils.contrib.fastapi import FastAPIAuth, create_auth_router
-
-app = FastAPI()
-
-client = OIDCClient(
-    issuer="https://id.example.com",
-    client_id="my-app",
-    client_secret="secret",
-    redirect_uri="https://my-app.example.com/auth/callback",
-)
-
-# /login sends the browser to the identity server.
-# /callback exchanges the code and sets an httpOnly session cookie.
-app.include_router(create_auth_router(client), prefix="/auth")
-
-# The resource half, for the API routes the signed-in browser then calls.
-app.state.auth = FastAPIAuth(issuer="https://id.example.com", audience="my-api")
-```
-
-That leaves the cookie the callback set and routes that read a bearer token, so
-bind `session_principal` to join them. See
-[Connecting An IdP](docs/guide/connecting-an-idp.md) for the whole wiring.
-
-The default `TokenStore` is in memory, which means a restart signs everybody out
-and two workers do not share sessions. Pass a `TokenManager` backed by your own
-store for anything beyond a single process.
-
-## Token Refresh
+## Token refresh
 
 `TokenManager` sits over a `TokenStore` and refreshes when the access token is
 near expiry, so callers ask for a token and get a valid one.
@@ -186,17 +137,12 @@ notice expiry together each send the refresh token, and a provider that rotates
 on every use may read the second as reuse and revoke the family. Wrap it in your
 own lock where that matters.
 
-## FastAPI Integration
+## Using it with FastAPI
 
-The resource half: validating the token a caller arrives with, and guarding
-routes by role or permission. Signing somebody in is
-[Browser Login](#browser-login) above.
+`oidcutils.contrib.fastapi` covers both halves. Checking tokens first, since
+that is what most services want.
 
-See [docs/guide/fastapi-integration.md](docs/guide/fastapi-integration.md) for a
-full guide covering three wiring patterns: `app.state`, dependency overrides,
-and router factories.
-
-Quick start with `app.state`:
+Put a `FastAPIAuth` on `app.state` and the dependency functions find it:
 
 ```python
 from fastapi import Depends, FastAPI
@@ -222,7 +168,47 @@ async def create_order(
     return {"created_by": user.subject}
 ```
 
-## Local Development
+There are two other wiring patterns, dependency overrides and router factories,
+in [docs/guide/fastapi-integration.md](docs/guide/fastapi-integration.md).
+
+### Signing somebody in
+
+`create_auth_router` takes the client from [browser login](#browser-login) and
+gives you the flow as two routes, holding the pending states and the session
+store itself. The browser only ever sees a redirect and a cookie, never client
+credentials or tokens.
+
+```python
+from fastapi import FastAPI
+from oidcutils import OIDCClient
+from oidcutils.contrib.fastapi import FastAPIAuth, create_auth_router
+
+app = FastAPI()
+
+client = OIDCClient(
+    issuer="https://id.example.com",
+    client_id="my-app",
+    client_secret="secret",
+    redirect_uri="https://my-app.example.com/auth/callback",
+)
+
+# /login sends the browser to the identity server.
+# /callback exchanges the code and sets an httpOnly session cookie.
+app.include_router(create_auth_router(client), prefix="/auth")
+
+# The resource half, for the API routes the signed-in browser then calls.
+app.state.auth = FastAPIAuth(issuer="https://id.example.com", audience="my-api")
+```
+
+That leaves the cookie the callback set and routes that read a bearer token, so
+bind `session_principal` to join them. See
+[Connecting An IdP](docs/guide/connecting-an-idp.md) for the whole wiring.
+
+The default `TokenStore` is in memory, which means a restart signs everybody out
+and two workers do not share sessions. Pass a `TokenManager` backed by your own
+store for anything beyond a single process.
+
+## Local development
 
 Run a development identity provider with no external provider and nothing to
 configure:
@@ -252,7 +238,7 @@ Built on `http.server`, so it needs nothing beyond this package. Supply
 restart. For a single-process loop, `create_dev_idp` returns the same provider
 as a mountable app.
 
-### Signing In Locally
+### Signing in locally
 
 `FastAPIAuth.mount_dev` gives an app a working browser login with nothing
 external running: the provider, an authorization page listing who to be, and the
@@ -290,7 +276,7 @@ as a bearer header, and call the routes behind `current_user`.
 It issues a signed token to anyone who asks, so it belongs on a developer's
 machine and nowhere else. See [Local Development](docs/examples/local-dev.md).
 
-## Custom Claim Mapping
+## Custom claim mapping
 
 If your IdP uses non-standard claim names, configure the mapper:
 
@@ -307,7 +293,7 @@ mapper = DefaultClaimMapper(
 Or implement the `ClaimMapper` protocol for full control over how JWT claims
 become a `Principal`.
 
-## The Principal Model
+## The Principal model
 
 | Field         | Type               | Source claim |
 | ------------- | ------------------ | ------------ |
