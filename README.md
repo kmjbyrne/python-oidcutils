@@ -15,7 +15,24 @@ expires.
 An API serving machine callers never needs that, anything with a sign-in button
 does.
 
-Start at [browser login](#browser-login) if that is you.
+## Purpose
+
+Decoding is a few lines with any JOSE library. The rest is what this adds:
+
+| Case                                      | What happens                                                                                    |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Token signed with a key you have not seen | JWKS refetched once and the token retried, so a key rotation does not take the service down     |
+| Token names an algorithm you refuse       | No refetch, so an unauthenticated caller cannot make you hit the provider once per request      |
+| Anything else the JOSE library raises     | `TokenError`, so a strange token gets a 401 and not a 500                                       |
+| Provider unreachable                      | The `httpx` error propagates, so a bad token stays distinguishable from an unreachable provider |
+| Provider refuses to issue tokens          | `GrantError` carrying what the server said                                                      |
+
+None of this is particulary hard in isolation. It is a list of required items to
+get a system near-production ready state, and every item waits until production
+to matter most.
+
+The `Principal` it hands back gives routes `has_role` and `has_permission` over
+the claims.
 
 ## Install
 
@@ -39,26 +56,12 @@ uv add git+https://github.com/kmjbyrne/python-oidcutils.git@v0.0.3-beta
 
 ## How Validation Works
 
-Token validation uses OIDC discovery to find the JWKS endpoint, fetches the
-signing keys, and caches them.
+Validation uses OIDC discovery to find the JWKS endpoint, fetches the signing
+keys and caches them. The table above covers what happens when that cache is
+wrong or the token is.
 
-The handling around that cache is most of the reason to use this rather than
-calling a JWT library yourself. A signature failure or an unrecognised key id
-refetches the JWKS once and retries, which is what carries a service through a
-provider rotating its keys. A token whose algorithm is refused does not get that
-retry, because no rotation can make the algorithm acceptable and retrying would
-fetch the JWKS for every malformed token an unauthenticated caller cared to
-send. Every failure joserfc can raise arrives as a `TokenError`, including the
-ones that are easy to miss by name, so a bad token is a 401 rather than an
-unhandled exception.
-
-Transport failures are left alone deliberately. An unreachable provider raises
-the underlying `httpx` error, so "this token is bad" stays distinguishable from
-"the provider is down".
-
-RBAC adds no extra verification. Roles and permissions live inside the JWT
-claims. After the single token validation, the SDK checks the `Principal` fields
-in memory.
+RBAC adds no extra verification. Roles and permissions live in the JWT claims,
+so after the one validation the checks are `Principal` field lookups in memory.
 
 ## Checking A Token
 
@@ -73,6 +76,7 @@ validator = TokenValidator(
     audience="my-api",
 )
 
+token = "<token>"
 principal: Principal = await validator.validate_token(token)
 principal.subject  # "user-123"
 principal.has_role("admin")
@@ -122,7 +126,9 @@ near expiry, so callers ask for a token and get a valid one.
 
 Refreshing needs a provider that implements the refresh grant. The development
 provider here mints tokens rather than running the code flow, so point this at a
-real one to exercise it.
+real one to exercise it. A provider that refuses a grant raises `GrantError`
+carrying what it said, which is also what you get for a code already redeemed or
+client credentials the server rejects.
 
 `create_auth_router` builds one for you. Construct it directly when you are
 holding tokens obtained some other way, or when you need a store that outlives
@@ -160,13 +166,10 @@ own lock where that matters.
 
 ## Using It With FastAPI
 
-`oidcutils.contrib.fastapi` covers both cases. Checking tokens first, since that
-is what most services want.
-
 `app.state.auth` is where the validator lives, and the guards are the policy on
-top of it. `current_user` looks the validator up there, and `require_role` and
-`require_permission` resolve their caller through `current_user`, so setting it
-once in the factory is all the wiring the routes need:
+top of it. `current_user` looks it up there, and `require_role` and
+`require_permission` resolve their caller through `current_user`, so one line in
+the factory is all the wiring the routes need:
 
 ```python
 from fastapi import Depends, FastAPI
@@ -192,12 +195,12 @@ async def create_order(
     return {"created_by": user.subject}
 ```
 
-`app.state` is untyped, so a wiring mistake shows up as a lookup that finds
-nothing rather than a name error. `current_user` raises a `RuntimeError` naming
-the fix instead of admitting an anonymous caller. If you would rather hold a
-real reference, override `current_user` instead and pass `user_dependency` to
-the guards so they resolve the same one. That pattern and router factories are
-both in [docs/guide/fastapi-integration.md](docs/guide/fastapi-integration.md).
+`app.state` is untyped, so a wiring mistake surfaces at request time and not at
+import. `current_user` answers that case with a `RuntimeError` naming the fix,
+having no business admitting an anonymous caller. To hold a real reference
+instead, override `current_user` and pass `user_dependency` to the guards so
+they resolve the same one. That and router factories are in
+[docs/guide/fastapi-integration.md](docs/guide/fastapi-integration.md).
 
 ### Signing Somebody In
 
