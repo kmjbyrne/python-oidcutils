@@ -15,6 +15,25 @@ expires.
 An API serving machine callers never needs that, anything with a sign-in button
 does.
 
+## Why Take The Dependency
+
+Decoding a JWT is a few lines with any JOSE library. The parts people leave out
+are the ones that only fail later: refetching the signing keys when a token
+arrives with an unrecognised key id, which is what carries a service through the
+provider rotating them; not refetching when the token names an algorithm you
+refuse, so an unauthenticated caller cannot make you hit the provider once per
+request; and catching every error the JOSE library can raise rather than the
+three you thought of, so a strange token is a 401 instead of a 500.
+
+Connection failures are deliberately left to propagate, so "this token is bad"
+stays distinguishable from "the provider is down". The `Principal` gives routes
+`has_role` and `has_permission` over the claims, and a refusal to issue tokens
+raises `GrantError` carrying what the server said rather than a `KeyError` from
+somewhere inside the client.
+
+None of that is difficult. It is just a list nobody remembers in full, and the
+items on it fail in production rather than in development.
+
 Start at [browser login](#browser-login) if that is you.
 
 ## Install
@@ -122,7 +141,9 @@ near expiry, so callers ask for a token and get a valid one.
 
 Refreshing needs a provider that implements the refresh grant. The development
 provider here mints tokens rather than running the code flow, so point this at a
-real one to exercise it.
+real one to exercise it. A provider that refuses a grant raises `GrantError`
+carrying what it said, which is also what you get for a code already redeemed or
+client credentials the server rejects.
 
 `create_auth_router` builds one for you. Construct it directly when you are
 holding tokens obtained some other way, or when you need a store that outlives
