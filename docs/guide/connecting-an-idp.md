@@ -35,10 +35,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings, OIDCSettings):
     model_config = SettingsConfigDict(env_file=(".env", ".env.local"))
 
-    # Where the provider sends the browser back to. This is a route on YOUR
-    # service, not on the provider. The library has no field for it because
-    # only the client half needs one, so declare it yourself.
-    CALLBACK_BASE_URL: str = "http://localhost:8000"
+    # The `redirect_uri` of RFC 6749: the route on YOUR service that the
+    # provider sends the browser back to. Declare it yourself; OIDCSettings
+    # carries the client credentials but not this.
+    #
+    # The whole URL, not a base to join onto. Providers compare it as an exact
+    # string, so it is the value that has to match what you registered.
+    OIDC_REDIRECT_URI: str = "http://localhost:8000/auth/callback"
 ```
 
 `OIDCSettings` contributes `OIDC_ISSUER`, `OIDC_AUDIENCE`, `OIDC_CLIENT_ID` and
@@ -50,10 +53,10 @@ OIDC_ISSUER="http://localhost:9000"        # the provider
 OIDC_AUDIENCE="my-api"                     # the `aud` your API accepts
 OIDC_CLIENT_ID="my-app"
 OIDC_CLIENT_SECRET="secret"
-CALLBACK_BASE_URL="http://localhost:8000"  # your service
+OIDC_REDIRECT_URI="http://localhost:8000/auth/callback"  # your service
 ```
 
-The issuer is the provider's address. `CALLBACK_BASE_URL` is yours. Deriving one
+The issuer is the provider's address. The redirect URI is yours. Deriving one
 from the other sends the browser back to the provider, which has no callback
 route and answers 404.
 
@@ -84,7 +87,7 @@ client = OIDCClient(
     issuer=settings.OIDC_ISSUER,
     client_id=settings.OIDC_CLIENT_ID,
     client_secret=settings.OIDC_CLIENT_SECRET,
-    redirect_uri=f"{settings.CALLBACK_BASE_URL}/auth/callback",
+    redirect_uri=settings.OIDC_REDIRECT_URI,
 )
 
 # 3. The routes.
