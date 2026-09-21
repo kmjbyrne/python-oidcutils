@@ -10,8 +10,12 @@ routes without touching JWTs directly.
 It also does the other half, for services that have to obtain a token rather
 than just check one. `OIDCClient` sends a browser to the identity server,
 exchanges the code it comes back with, and refreshes the token set before it
-expires. An API serving machine callers never needs that; anything with a
-sign-in button does. Start at [browser login](#browser-login) if that is you.
+expires.
+
+An API serving machine callers never needs that, anything with a sign-in button
+does.
+
+Start at [browser login](#browser-login) if that is you.
 
 ## Install
 
@@ -33,7 +37,7 @@ Pin to a version tag:
 uv add git+https://github.com/kmjbyrne/python-oidcutils.git@v0.0.3-beta
 ```
 
-## How validation works
+## How Validation Works
 
 Token validation uses OIDC discovery to find the JWKS endpoint, fetches the
 signing keys, and caches them. When the SDK encounters an unknown key ID, it
@@ -43,10 +47,10 @@ RBAC adds no extra verification. Roles and permissions live inside the JWT
 claims. After the single token validation, the SDK checks the `Principal` fields
 in memory.
 
-## Checking a token
+## Checking A Token
 
-`FastAPIAuth` wraps this, so reach for the validator directly only when you are
-serving HTTP some other way.
+`TokenValidator` is the whole of it. Give it an issuer and an audience, hand it
+a token, and get a `Principal` back.
 
 ```python
 from oidcutils import TokenValidator, Principal
@@ -62,7 +66,7 @@ principal.has_role("admin")
 principal.has_permission("orders.write")
 ```
 
-## Browser login
+## Browser Login
 
 Signing somebody in is three calls on `OIDCClient`, and since it imports no
 framework this is the same however you happen to serve HTTP:
@@ -83,7 +87,7 @@ url, state = await client.authorization_url()
 # On your /callback route, with the code the identity server sent back.
 token_set = await client.exchange_code(code)
 
-# Later, when the access token nears expiry. See Token refresh below.
+# Later, when the access token nears expiry. See Token Refresh below.
 token_set = await client.refresh(token_set.refresh_token)
 ```
 
@@ -98,7 +102,7 @@ states between the redirect and the callback, the token set stored against a
 session id, and the cookie that names it. If you are on FastAPI,
 `create_auth_router` does all of that for you.
 
-## Token refresh
+## Token Refresh
 
 `TokenManager` sits over a `TokenStore` and refreshes when the access token is
 near expiry, so callers ask for a token and get a valid one.
@@ -137,7 +141,7 @@ notice expiry together each send the refresh token, and a provider that rotates
 on every use may read the second as reuse and revoke the family. Wrap it in your
 own lock where that matters.
 
-## Using it with FastAPI
+## Using It With FastAPI
 
 `oidcutils.contrib.fastapi` covers both halves. Checking tokens first, since
 that is what most services want.
@@ -171,7 +175,7 @@ async def create_order(
 There are two other wiring patterns, dependency overrides and router factories,
 in [docs/guide/fastapi-integration.md](docs/guide/fastapi-integration.md).
 
-### Signing somebody in
+### Signing Somebody In
 
 `create_auth_router` takes the client from [browser login](#browser-login) and
 gives you the flow as two routes, holding the pending states and the session
@@ -208,7 +212,7 @@ The default `TokenStore` is in memory, which means a restart signs everybody out
 and two workers do not share sessions. Pass a `TokenManager` backed by your own
 store for anything beyond a single process.
 
-## Local development
+## Local Development
 
 Run a development identity provider with no external provider and nothing to
 configure:
@@ -238,7 +242,7 @@ Built on `http.server`, so it needs nothing beyond this package. Supply
 restart. For a single-process loop, `create_dev_idp` returns the same provider
 as a mountable app.
 
-### Signing in locally
+### Signing In Locally
 
 `FastAPIAuth.mount_dev` gives an app a working browser login with nothing
 external running: the provider, an authorization page listing who to be, and the
@@ -276,7 +280,7 @@ as a bearer header, and call the routes behind `current_user`.
 It issues a signed token to anyone who asks, so it belongs on a developer's
 machine and nowhere else. See [Local Development](docs/examples/local-dev.md).
 
-## Custom claim mapping
+## Custom Claim Mapping
 
 If your IdP uses non-standard claim names, configure the mapper:
 
@@ -293,7 +297,7 @@ mapper = DefaultClaimMapper(
 Or implement the `ClaimMapper` protocol for full control over how JWT claims
 become a `Principal`.
 
-## The Principal model
+## The Principal Model
 
 | Field         | Type               | Source claim |
 | ------------- | ------------------ | ------------ |

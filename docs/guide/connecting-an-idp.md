@@ -1,14 +1,14 @@
-# Connecting a FastAPI service to an identity provider
+# Connecting A FastAPI Service To An Identity Provider
 
 You have a FastAPI service. You have an identity provider running somewhere
 else. This page is the wiring between them, for the case where a browser signs
 in and then calls your API.
 
 If your service only ever receives bearer tokens that something else obtained,
-you do not need any of this. Read
-[FastAPI Integration](fastapi-integration.md) instead and stop there.
+you do not need any of this. Read [FastAPI Integration](fastapi-integration.md)
+instead and stop there.
 
-## The four pieces
+## The Four Pieces
 
 A sign-in flow needs four things wired up. The first three are easy enough to
 find in the API; the fourth is the one people miss.
@@ -17,8 +17,8 @@ find in the API; the fourth is the one people miss.
 2. A client, which drives the browser to the provider and exchanges the code it
    comes back with.
 3. Two routes, `/login` and `/callback`.
-4. A join between them, because the callback leaves the browser holding a
-   cookie while your routes are looking for a bearer token.
+4. A join between them, because the callback leaves the browser holding a cookie
+   while your routes are looking for a bearer token.
 
 Leave out that last one and the sign-in looks like it works. The provider
 redirects, the cookie gets set, and then every API call answers 401.
@@ -53,16 +53,18 @@ and `client_secret` are all OAuth 2.0 (RFC 6749), which OIDC builds the
 authorization code flow on; the issuer and the ID token are what OIDC adds.
 
 ```bash
-OIDC_ISSUER="http://localhost:9000"        # the provider
-OIDC_AUDIENCE="my-api"                     # the `aud` your API accepts
+OIDC_ISSUER="http://localhost:9000"
+OIDC_AUDIENCE="my-api"
 OIDC_CLIENT_ID="my-app"
 OIDC_CLIENT_SECRET="secret"
-OIDC_REDIRECT_URI="http://localhost:8000/auth/callback"  # your service
+OIDC_REDIRECT_URI="http://localhost:8000/auth/callback"
 ```
 
-The issuer is the provider's address. The redirect URI is yours. Deriving one
-from the other sends the browser back to the provider, which has no callback
-route and answers 404.
+`OIDC_ISSUER` is the provider. `OIDC_AUDIENCE` is the `aud` claim your API
+accepts. `OIDC_REDIRECT_URI` is a route on your own service.
+
+Deriving the redirect URI from the issuer sends the browser back to the
+provider, which has no callback route and answers 404.
 
 ## Wiring
 
@@ -124,7 +126,7 @@ Both styles work at once after this. A browser arrives with the session cookie,
 a script arrives with an `Authorization` header, and `session_principal` serves
 whichever it finds.
 
-## Sessions beyond one process
+## Sessions Beyond One Process
 
 `create_auth_router` defaults to an in-memory `TokenStore`. A restart signs
 everybody out and two workers do not share sessions, so anything past a single
@@ -135,7 +137,7 @@ manager = TokenManager(client=client, store=MyRedisStore())
 router = create_auth_router(client, token_manager=manager)
 ```
 
-## When it does not work
+## When It Does Not Work
 
 | Symptom                               | Cause                                                         |
 | ------------------------------------- | ------------------------------------------------------------- |
@@ -146,7 +148,7 @@ router = create_auth_router(client, token_manager=manager)
 | `CERTIFICATE_VERIFY_FAILED`           | The issuer is served over TLS your service does not trust     |
 | `Issuer mismatch: expected X, got Y`  | Discovery reports a different issuer than configured          |
 
-## A provider to develop against
+## A Provider To Develop Against
 
 `FastAPIAuth.mount_dev` mounts a provider inside your own app, which is the
 quickest way to click through a login with nothing else running. It derives
