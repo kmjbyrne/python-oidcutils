@@ -99,13 +99,17 @@ server, which has no callback to answer with.
 
 There is bookkeeping around those calls that somebody has to own: the pending
 states between the redirect and the callback, the token set stored against a
-session id, and the cookie that names it. If you are on FastAPI,
-`create_auth_router` does all of that for you.
+session id, and the cookie that names it. `TokenManager` handles the storing and
+the refreshing; the rest belongs to whatever is serving your routes.
 
 ## Token Refresh
 
 `TokenManager` sits over a `TokenStore` and refreshes when the access token is
 near expiry, so callers ask for a token and get a valid one.
+
+Refreshing needs a provider that implements the refresh grant. The development
+provider here mints tokens rather than running the code flow, so point this at a
+real one to exercise it.
 
 `create_auth_router` builds one for you. Construct it directly when you are
 holding tokens obtained some other way, or when you need a store that outlives
@@ -143,10 +147,13 @@ own lock where that matters.
 
 ## Using It With FastAPI
 
-`oidcutils.contrib.fastapi` covers both halves. Checking tokens first, since
-that is what most services want.
+`oidcutils.contrib.fastapi` covers both cases. Checking tokens first, since that
+is what most services want.
 
-Put a `FastAPIAuth` on `app.state` and the dependency functions find it:
+`app.state.auth` is where the validator lives, and the guards are the policy on
+top of it. `current_user` looks the validator up there, and `require_role` and
+`require_permission` resolve their caller through `current_user`, so setting it
+once in the factory is all the wiring the routes need:
 
 ```python
 from fastapi import Depends, FastAPI
@@ -172,8 +179,12 @@ async def create_order(
     return {"created_by": user.subject}
 ```
 
-There are two other wiring patterns, dependency overrides and router factories,
-in [docs/guide/fastapi-integration.md](docs/guide/fastapi-integration.md).
+`app.state` is untyped, so a wiring mistake shows up as a lookup that finds
+nothing rather than a name error. `current_user` raises a `RuntimeError` naming
+the fix instead of admitting an anonymous caller. If you would rather hold a
+real reference, override `current_user` instead and pass `user_dependency` to
+the guards so they resolve the same one. That pattern and router factories are
+both in [docs/guide/fastapi-integration.md](docs/guide/fastapi-integration.md).
 
 ### Signing Somebody In
 
