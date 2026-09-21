@@ -5,23 +5,23 @@ else. This page is the wiring between them, for the case where a browser signs
 in and then calls your API.
 
 If your service only ever receives bearer tokens that something else obtained,
-you do not need any of this. Read
-[FastAPI Integration](fastapi-integration.md) instead and stop there.
+you do not need any of this. Read [FastAPI Integration](fastapi-integration.md)
+instead and stop there.
 
 ## The Four Pieces
 
-A sign-in flow needs four things wired, and three of them are easy to find. The
-fourth is the one that catches people.
+A sign-in flow needs four things wired up. The first three are easy enough to
+find in the API; the fourth is the one people miss.
 
-1. A **validator**, which turns a token into a `Principal`.
-2. A **client**, which drives the browser to the provider and exchanges the code
-   it comes back with.
-3. Two **routes**, `/login` and `/callback`.
-4. A **join**, because the callback leaves the browser holding a cookie and
-   your routes are looking for a bearer token.
+1. A validator, which turns a token into a `Principal`.
+2. A client, which drives the browser to the provider and exchanges the code it
+   comes back with.
+3. Two routes, `/login` and `/callback`.
+4. A join between them, because the callback leaves the browser holding a cookie
+   while your routes are looking for a bearer token.
 
-Leave out the fourth and a sign-in appears to work: the provider redirects, the
-cookie gets set, and then every API call answers 401.
+Leave out that last one and the sign-in looks like it works. The provider
+redirects, the cookie gets set, and then every API call answers 401.
 
 ## Configuration
 
@@ -35,27 +35,36 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings, OIDCSettings):
     model_config = SettingsConfigDict(env_file=(".env", ".env.local"))
 
-    # Where the provider sends the browser back to. This is a route on YOUR
-    # service, not on the provider. The library has no field for it because
-    # only the client half needs one, so declare it yourself.
-    CALLBACK_BASE_URL: str = "http://localhost:8000"
+    # Where the provider sends the browser back to: a route on YOUR service.
+    # Declare it yourself. OIDCSettings carries the client credentials but
+    # not this, and the OIDC_ prefix here just keeps the auth block together.
+    #
+    # The whole URL, not a base to join onto. Providers compare it as an exact
+    # string, so it is the value that has to match what you registered.
+    OIDC_REDIRECT_URI: str = "http://localhost:8000/auth/callback"
 ```
 
 `OIDCSettings` contributes `OIDC_ISSUER`, `OIDC_AUDIENCE`, `OIDC_CLIENT_ID` and
 `OIDC_CLIENT_SECRET`. The first two are read by the validator; the last two are
 read by the client and ignored by everything else.
 
+The names are a namespace rather than a citation. `redirect_uri`, `client_id`
+and `client_secret` are all OAuth 2.0 (RFC 6749), which OIDC builds the
+authorization code flow on; the issuer and the ID token are what OIDC adds.
+
 ```bash
-OIDC_ISSUER="http://localhost:9000"        # the provider
-OIDC_AUDIENCE="my-api"                     # the `aud` your API accepts
+OIDC_ISSUER="http://localhost:9000"
+OIDC_AUDIENCE="my-api"
 OIDC_CLIENT_ID="my-app"
 OIDC_CLIENT_SECRET="secret"
-CALLBACK_BASE_URL="http://localhost:8000"  # your service
+OIDC_REDIRECT_URI="http://localhost:8000/auth/callback"
 ```
 
-The issuer is the provider's address. `CALLBACK_BASE_URL` is yours. Deriving one
-from the other sends the browser back to the provider, which has no callback
-route and answers 404.
+`OIDC_ISSUER` is the provider. `OIDC_AUDIENCE` is the `aud` claim your API
+accepts. `OIDC_REDIRECT_URI` is a route on your own service.
+
+Deriving the redirect URI from the issuer sends the browser back to the
+provider, which has no callback route and answers 404.
 
 ## Wiring
 
@@ -84,7 +93,7 @@ client = OIDCClient(
     issuer=settings.OIDC_ISSUER,
     client_id=settings.OIDC_CLIENT_ID,
     client_secret=settings.OIDC_CLIENT_SECRET,
-    redirect_uri=f"{settings.CALLBACK_BASE_URL}/auth/callback",
+    redirect_uri=settings.OIDC_REDIRECT_URI,
 )
 
 # 3. The routes.
@@ -116,40 +125,6 @@ async def admin(user: Principal = Depends(require_role("admin"))):
 Both styles work at once after this. A browser arrives with the session cookie,
 a script arrives with an `Authorization` header, and `session_principal` serves
 whichever it finds.
-
-## Behind A Proxy
-
-The issuer is one string, and it has to mean the same place to the browser and
-to your service. The browser resolves it over the public address; your service,
-inside a container, may not resolve that address at all.
-
-`TokenValidator` builds the discovery URL from the issuer, compares the issuer
-discovery reports back, and requires the token's `iss` to match it. All three
-are the same value, so pointing it at an internal hostname fails the comparison
-against what the provider reports.
-
-Make the public address reachable from inside instead. Under Docker Compose that
-is a network alias on the proxy:
-
-```yaml
-nginx:
-  networks:
-    default:
-      aliases:
-        - app.example.test
-```
-
-If the proxy serves a certificate your service does not trust, the discovery
-fetch fails verification. Mount the CA and point Python at it rather than
-disabling the check:
-
-```yaml
-api:
-  environment:
-    SSL_CERT_FILE: /etc/ssl/certs/dev-ca.crt
-  volumes:
-    - ./certs/dev-ca.crt:/etc/ssl/certs/dev-ca.crt:ro
-```
 
 ## Sessions Beyond One Process
 
