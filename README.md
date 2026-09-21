@@ -12,19 +12,19 @@ routes without touching JWTs directly.
 Not on PyPI at the moment. Install directly from GitHub:
 
 ```bash
-uv pip install git+https://github.com/kmjbyrne/python-oidcutils.git
+uv add git+https://github.com/kmjbyrne/python-oidcutils.git
 ```
 
 For FastAPI support:
 
 ```bash
-uv pip install "oidcutils[fastapi] @ git+https://github.com/kmjbyrne/python-oidcutils.git"
+uv add "oidcutils[fastapi] @ git+https://github.com/kmjbyrne/python-oidcutils.git"
 ```
 
 Pin to a version tag:
 
 ```bash
-uv pip install git+https://github.com/kmjbyrne/python-oidcutils.git@v0.1.0
+uv add git+https://github.com/kmjbyrne/python-oidcutils.git@v0.0.3-beta
 ```
 
 ## How It Works
