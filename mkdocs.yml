@@ -69,6 +69,7 @@ nav:
       - Token Refresh: guide/token-refresh.md
       - Claim Mapping: guide/claim-mapping.md
       - FastAPI Integration: guide/fastapi-integration.md
+      - Connecting An IdP: guide/connecting-an-idp.md
   - Examples:
       - Local Development: examples/local-dev.md
   - API Reference: api/reference.md

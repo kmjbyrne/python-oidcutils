@@ -109,6 +109,27 @@ app.state.auth = FastAPIAuth(issuer="https://id.example.com", audience="my-api")
 client, exactly. Most providers compare it as a string, so a trailing slash or a
 different host is a refused login rather than a warning.
 
+### Without FastAPI
+
+`create_auth_router` is a convenience for one framework. The flow underneath it
+is a handful of calls on `OIDCClient`, which imports no framework, so any web
+stack can drive it:
+
+```python
+# On your /login route: send the browser to `url` and keep `state`.
+url, state = await client.authorization_url()
+
+# On your /callback route, with the code the identity server sent back.
+token_set = await client.exchange_code(code)
+```
+
+`refresh` completes the set, for when the access token nears expiry. See
+[Token Refresh](#token-refresh).
+
+What the router adds is the bookkeeping around those calls: it holds the pending
+states, stores the token set against a session id, and sets the cookie. Doing it
+by hand means owning all three yourself.
+
 The default `TokenStore` is in memory, which means a restart signs everybody out
 and two workers do not share sessions. Pass a `TokenManager` backed by your own
 store for anything beyond a single process.

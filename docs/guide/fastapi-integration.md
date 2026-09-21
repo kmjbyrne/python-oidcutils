@@ -3,9 +3,15 @@
 Three patterns for wiring auth into FastAPI. See the comparison table below for
 trade-offs.
 
+Everything here is the resource half: the caller arrives holding a token and
+these patterns check it. `FastAPIAuth` performs no login. If your service needs
+a sign-in button, wire that first and come back, because it changes how
+`current_user` resolves a caller. See
+[Connecting An IdP](connecting-an-idp.md).
+
 !!! tip "Recommended: App State"
-    The `app.state` pattern gives you the cleanest routes with built-in
-    `require_permission` and `require_role` support.
+The `app.state` pattern gives you the cleanest routes with built-in
+`require_permission` and `require_role` support.
 
 ## Pattern 1: App State
 
@@ -101,10 +107,10 @@ async def create_order(
 ```
 
 !!! warning "Guards default to `current_user`"
-    Without `user_dependency`, `require_role` and `require_permission` resolve
-    the SDK's own `current_user`, which reads `app.state.auth`. Overriding a
-    different dependency leaves the guards reading an unconfigured app, so they
-    raise rather than admit the caller. Bind the same dependency the routes use.
+Without `user_dependency`, `require_role` and `require_permission` resolve
+the SDK's own `current_user`, which reads `app.state.auth`. Overriding a
+different dependency leaves the guards reading an unconfigured app, so they
+raise rather than admit the caller. Bind the same dependency the routes use.
 
 Fix the argument once if you use the guards often:
 
