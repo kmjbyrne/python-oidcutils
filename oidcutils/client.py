@@ -1,3 +1,4 @@
+import secrets
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -32,6 +33,23 @@ class TokenSet:
         import time
 
         return time.time() >= self.expires_at
+
+
+@dataclass(frozen=True)
+class AuthorizationRequest:
+    """One sign-in round trip: where to send the browser, and what to keep.
+
+    ``state``, ``nonce`` and ``code_verifier`` are this round trip's secrets.
+    Keep all three until the callback, somewhere only this browser's request
+    can reach, such as a short-lived httpOnly cookie. Check ``state`` against
+    the callback's, pass ``code_verifier`` to ``exchange_code``, and pass
+    ``nonce`` to ``TokenValidator.validate_token`` with the ID token.
+    """
+
+    url: str
+    state: str
+    nonce: str
+    code_verifier: str
 
 
 class OIDCClient:
@@ -93,13 +111,40 @@ class OIDCClient:
         )
         return url, state
 
-    async def exchange_code(self, code: str) -> TokenSet:
-        """Exchange an authorization code for tokens."""
+    async def authorization_request(self) -> AuthorizationRequest:
+        """Start a sign-in with PKCE (S256) and a nonce.
+
+        Prefer this to ``authorization_url``. The code challenge binds the code
+        to this round trip, so a code intercepted on the way back cannot be
+        redeemed without the verifier. The nonce does the same for the ID
+        token, so one minted for another sign-in is refused.
+        """
         metadata = await self._discover()
         oauth = self._build_oauth_client()
+        oauth.code_challenge_method = "S256"
+        nonce = secrets.token_urlsafe(32)
+        code_verifier = secrets.token_urlsafe(48)
+        url, state = oauth.create_authorization_url(
+            metadata["authorization_endpoint"],
+            state=secrets.token_urlsafe(32),
+            code_verifier=code_verifier,
+            nonce=nonce,
+        )
+        return AuthorizationRequest(url=url, state=state, nonce=nonce, code_verifier=code_verifier)
+
+    async def exchange_code(self, code: str, code_verifier: str | None = None) -> TokenSet:
+        """Exchange an authorization code for tokens.
+
+        Pass the ``code_verifier`` from ``authorization_request``. A sign-in
+        started with ``authorization_url`` has none.
+        """
+        metadata = await self._discover()
+        oauth = self._build_oauth_client()
+        extra = {"code_verifier": code_verifier} if code_verifier else {}
         token = await oauth.fetch_token(
             metadata["token_endpoint"],
             code=code,
+            **extra,
         )
         return self._to_token_set(token)
 

@@ -95,7 +95,7 @@ and exchanging the code. It imports no framework, so the same code works in any
 HTTP server.
 
 ```python
-from oidcutils import OIDCClient
+from oidcutils import OIDCClient, TokenValidator
 
 client = OIDCClient(
     issuer="https://id.example.com",
@@ -105,12 +105,19 @@ client = OIDCClient(
 )
 
 # 1. In your /login route handler: build the URL and redirect the browser.
-#    Keep `state` to verify it on the way back.
-url, state = await client.authorization_url()
+#    Keep state, nonce and code_verifier until the callback, for example in
+#    a short-lived httpOnly cookie.
+started = await client.authorization_request()
 
 # 2. In your /callback route handler: the identity server redirected the
-#    browser here with a `code` query parameter. Exchange it for tokens.
-token_set = await client.exchange_code(code)
+#    browser here with `code` and `state`. Check the state matches, then
+#    exchange the code with this round trip's verifier.
+token_set = await client.exchange_code(code, code_verifier=started.code_verifier)
+
+# 2b. Check the ID token was minted for this sign-in.
+identity = await TokenValidator("https://id.example.com", audience="my-app").validate_token(
+    token_set.id_token, nonce=started.nonce
+)
 
 # 3. Later, when the access token nears expiry. See Token Refresh below.
 token_set = await client.refresh(token_set.refresh_token)

@@ -94,6 +94,29 @@ async def test_valid_token(validator: TokenValidator):
 
 
 @pytest.mark.asyncio
+async def test_a_matching_nonce_is_accepted(validator: TokenValidator):
+    token = _make_token({"nonce": "n-1"})
+
+    principal = await validator.validate_token(token, nonce="n-1")
+
+    assert principal.subject == "user-123"
+
+
+@pytest.mark.asyncio
+async def test_a_nonce_from_another_sign_in_is_refused(validator: TokenValidator):
+    token = _make_token({"nonce": "someone-elses"})
+
+    with pytest.raises(TokenError, match="nonce"):
+        await validator.validate_token(token, nonce="n-1")
+
+
+@pytest.mark.asyncio
+async def test_a_missing_nonce_is_refused_when_one_is_expected(validator: TokenValidator):
+    with pytest.raises(TokenError, match="nonce"):
+        await validator.validate_token(_make_token(), nonce="n-1")
+
+
+@pytest.mark.asyncio
 async def test_expired_token(validator: TokenValidator):
     token = _make_token({"exp": int(time.time()) - 100})
     with pytest.raises(TokenError, match="expired"):

@@ -69,7 +69,13 @@ class TokenValidator:
         self._jwks = response.json()
         return KeySet.import_key_set(self._jwks)  # type: ignore[arg-type]
 
-    async def validate_token(self, token: str) -> Principal:
+    async def validate_token(self, token: str, nonce: str | None = None) -> Principal:
+        """Validate ``token`` and map its claims to a ``Principal``.
+
+        Pass ``nonce`` when validating an ID token from a sign-in started with
+        ``OIDCClient.authorization_request``. The token must then carry that
+        exact nonce, which proves it was minted for this round trip.
+        """
         claims_registry = JWTClaimsRegistry(
             iss={"essential": True, "value": self._issuer},
             aud={"essential": True, "value": self._audience},
@@ -111,5 +117,8 @@ class TokenValidator:
             # refresh here would fetch the JWKS for every malformed token that
             # arrived.
             raise TokenError(f"Invalid token: {exc}") from exc
+
+        if nonce is not None and decoded.claims.get("nonce") != nonce:
+            raise TokenError("Token nonce does not match this sign-in")
 
         return self._claim_mapper.map(decoded.claims)

@@ -8,6 +8,18 @@ promise somebody relies on.
 Entries before `0.0.1-beta` were reconstructed from the commit history after the
 fact, so they say what changed rather than what was announced at the time.
 
+## Unreleased
+
+### Added
+
+- `OIDCClient.authorization_request` starts a sign-in with PKCE (S256) and a
+  nonce, returning an `AuthorizationRequest` holding the URL and the round
+  trip's state, nonce and code verifier. `authorization_url` still works and
+  sends neither.
+- `OIDCClient.exchange_code` takes the `code_verifier` to send with the code.
+- `TokenValidator.validate_token` takes a `nonce`, and refuses a token that does
+  not carry it. Pass it when validating an ID token.
+
 ## 0.0.3-beta - 2026-09-20
 
 ### Added
